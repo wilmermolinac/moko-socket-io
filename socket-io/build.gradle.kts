@@ -1,25 +1,19 @@
-/*
- * Copyright 2020 IceRock MAG Inc. Use of this source code is governed by the Apache 2.0 license.
- */
-
-import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget
-import java.util.Base64
-
 plugins {
-    id("com.android.library")
-    id("org.jetbrains.kotlin.multiplatform")
-    id("kotlin-parcelize")
-    id("dev.icerock.mobile.multiplatform.cocoapods")
-    id("dev.icerock.mobile.multiplatform.android-manifest")
-    id("org.gradle.maven-publish")
-    id("signing")
+    id 'com.android.library'
+    id 'org.jetbrains.kotlin.multiplatform'
+    id 'kotlin-parcelize'
+    id 'dev.icerock.mobile.multiplatform.cocoapods'
+    id 'dev.icerock.mobile.multiplatform.android-manifest'
+    id 'maven-publish'
+    id 'signing'
 }
 
-group = "dev.icerock.moko"
-version = libs.versions.mokoSocketIoVersion.get()
+group = "io.github.wilmermolinac"      // Aquí defines el grupo con el formato "io.github.tuUsuario"
+version = "0.6.1"                     // Establece la versión que deseas publicar
 
 kotlin {
     jvmToolchain(11)
+
     androidTarget {
         publishLibraryVariants("release", "debug")
     }
@@ -28,29 +22,18 @@ kotlin {
     jvm()
 
     sourceSets {
-        val commonMain by getting
-
-        val commonJvm = create("commonJvm") {
-            dependsOn(commonMain)
-        }
-
-        val androidMain by getting {
-            dependsOn(commonJvm)
-        }
-
-        val jvmMain by getting {
-            dependsOn(commonJvm)
-        }
-
-        val iosMain by getting
-        val iosSimulatorArm64Main by getting {
+        def commonMain = getByName("commonMain")
+        def androidMain = getByName("androidMain")
+        def jvmMain = getByName("jvmMain")
+        def iosMain = getByName("iosMain")
+        def iosSimulatorArm64Main = getByName("iosSimulatorArm64Main") {
             dependsOn(iosMain)
         }
     }
 
-    targets.withType<KotlinNativeTarget>().configureEach {
-        compilations.configureEach {
-            cinterops.configureEach {
+    targets.withType(org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget).configureEach {
+        compilations.all {
+            cinterops.all {
                 extraOpts("-compiler-option", "-fmodules")
             }
         }
@@ -58,82 +41,76 @@ kotlin {
 }
 
 dependencies {
-    commonMainApi(libs.serialization)
-    "androidMainImplementation"(libs.appCompat)
-    "commonJvmImplementation"(libs.socketIo) {
-        exclude(group = "org.json", module = "json")
-    }
-    "jvmMainImplementation"(libs.socketIo)
+    // Dependencias comunes y específicas según tu proyecto
+    commonMainApi "org.jetbrains.kotlinx:kotlinx-serialization-json:1.5.1" // Ejemplo
+    // Otras dependencias...
 }
+
 android {
     namespace = "dev.icerock.moko.socket"
+    // Configuración de Android...
 }
 
-val javadocJar by tasks.registering(Jar::class) {
-    archiveClassifier.set("javadoc")
-}
-
+// Publicación Maven
 publishing {
-    repositories.maven("https://s01.oss.sonatype.org/service/local/staging/deploy/maven2/") {
-        name = "OSSRH"
-
-        credentials {
-            username = System.getenv("OSSRH_USER")
-            password = System.getenv("OSSRH_KEY")
-        }
-    }
-
-    publications.withType<MavenPublication> {
-        // Stub javadoc.jar artifact
-        artifact(javadocJar.get())
-
-        // Provide artifacts information requited by Maven Central
-        pom {
-            name.set("MOKO socket io")
-            description.set("Socket.IO implementation Kotlin Multiplatform library")
-            url.set("https://github.com/icerockdev/moko-socket-io")
-            licenses {
-                license {
-                    name.set("Apache-2.0")
-                    url.set("https://github.com/icerockdev/moko-socket-io/blob/master/LICENSE.md")
-                    distribution.set("repo")
+    publications {
+        create(MavenPublication, "maven") {
+            from(components["kotlin"])
+            artifactId = "moko-socket-io"
+            pom {
+                name.set("MOKO Socket IO")
+                description.set("Socket.IO implementation for Kotlin Multiplatform")
+                url.set("https://github.com/wilmermolinac/moko-socket-io")
+                licenses {
+                    license {
+                        name.set("Apache-2.0")
+                        url.set("https://github.com/wilmermolinac/moko-socket-io/blob/master/LICENSE.md")
+                        distribution.set("repo")
+                    }
                 }
-            }
-
-            developers {
-                developer {
-                    id.set("Alex009")
-                    name.set("Aleksey Mikhailov")
-                    email.set("aleksey.mikhailov@icerockdev.com")
+                developers {
+                    developer {
+                        id.set("wilmermolinac")
+                        name.set("Wilmer Molina")
+                        email.set("wamcstudios@gmail.com") // Reemplaza con tu correo
+                    }
                 }
-                developer {
-                    id.set("Dorofeev")
-                    name.set("Andrey Dorofeev")
-                    email.set("adorofeev@icerockdev.com")
+                scm {
+                    connection.set("scm:git:https://github.com/wilmermolinac/moko-socket-io.git")
+                    developerConnection.set("scm:git:https://github.com/wilmermolinac/moko-socket-io.git")
+                    url.set("https://github.com/wilmermolinac/moko-socket-io")
                 }
-            }
-
-            scm {
-                connection.set("scm:git:ssh://github.com/icerockdev/moko-socket-io.git")
-                developerConnection.set("scm:git:ssh://github.com/icerockdev/moko-socket-io.git")
-                url.set("https://github.com/icerockdev/moko-socket-io")
             }
         }
     }
-
-    signing {
-        val signingKeyId: String? = System.getenv("SIGNING_KEY_ID")
-        val signingPassword: String? = System.getenv("SIGNING_PASSWORD")
-        val signingKey: String? = System.getenv("SIGNING_KEY")?.let { base64Key ->
-            String(Base64.getDecoder().decode(base64Key))
+    repositories {
+        // Ejemplo: Publicar en GitHub Packages. Asegúrate de tener configuradas las credenciales.
+        maven {
+            name = "GitHubPackages"
+            url = uri("https://maven.pkg.github.com/wilmermolinac/moko-socket-io")
+            credentials {
+                username = project.findProperty("gpr.user") ?: System.getenv("GITHUB_USERNAME")
+                password = project.findProperty("gpr.key") ?: System.getenv("GITHUB_TOKEN")
+            }
         }
-        if (signingKeyId != null) {
-            useInMemoryPgpKeys(signingKeyId, signingKey, signingPassword)
-            sign(publishing.publications)
-        }
+        // Si deseas publicar en OSSRH (Maven Central), configúralo aquí.
     }
 }
 
+// Configuración de Signing (opcional si publicas en repositorios que requieren firma)
+signing {
+    // Si tus variables de entorno están definidas, se usarán para firmar la publicación
+    def signingKeyId = System.getenv("SIGNING_KEY_ID")
+    def signingPassword = System.getenv("SIGNING_PASSWORD")
+    def signingKey = System.getenv("SIGNING_KEY")?.with { key -> new String(Base64.getDecoder().decode(key)) }
+    if (signingKeyId != null && signingKey != null && signingPassword != null) {
+        useInMemoryPgpKeys(signingKeyId, signingKey, signingPassword)
+        sign(publishing.publications)
+    }
+}
+
+// Configuración de CocoaPods (para iOS)
 cocoaPods {
+    // Esto generará el podspec a partir de tu configuración KMM
     pod("mokoSocketIo")
 }
