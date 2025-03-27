@@ -142,21 +142,15 @@ public class SocketIo: NSObject {
 
     @objc
     public func emit(event: String, data: [Any]) {
-        // Transformamos cada elemento del array si es JSON en string
         var result = [Any]()
-
         for item in data {
             if let jsonString = item as? String,
-               let itemData = jsonString.data(using: .utf8)
-            {
+               let itemData = jsonString.data(using: .utf8) {
                 do {
-                    // parseamos el string como JSON
-                    // itemObject puede ser [String: Any], [Any], etc
                     let itemObject = try JSONSerialization.jsonObject(with: itemData, options: [])
                     result.append(itemObject)
                 } catch {
                     print("emit parsing error: \(error.localizedDescription)")
-                    // Si falla el parse, lo mandamos tal cual
                     result.append(jsonString)
                 }
             } else {
@@ -164,20 +158,13 @@ public class SocketIo: NSObject {
             }
         }
 
-        // Llamamos a la nueva versión de emit
-        // Nota: 'result' es [Any], pero socket.emit requiere [SocketData].
-        // Si no quieres castear, podrías dejar 'result' como [SocketData].
-        // Para eso, deberías garantizar que los tipos de 'result' sean conformes a 'SocketData'.
-        // En la práctica, String, Int, Dictionary, Array, etc. ya conforman SocketData.
-        // Pero con 'Any' a lo mejor no todos. Podríamos forzar un cast.
-
-        // Si no deseas el completion, omítelo (usa la versión con nil)
-        socket.emit(event, with: result as! [SocketData]) // Forzamos cast, asumiendo que todos son SocketData
+        // Forzamos el cast a [SocketData] y agregamos 'completion: nil'
+        socket.emit(event, with: result as! [SocketData], completion: nil)
     }
 
     @objc
     public func emit(event: String, string: String) {
-        // Simplemente emitimos el string
-        socket.emit(event, with: [string]) // con completion por defecto = nil
+        // También con 'completion: nil'
+        socket.emit(event, with: [string], completion: nil)
     }
 }
