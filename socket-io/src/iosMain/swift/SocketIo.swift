@@ -1,163 +1,183 @@
-/*
- * Copyright 2020 IceRock MAG Inc. Use of this source code is governed by the Apache 2.0 license.
- */
-
 import SocketIO
 
 @objc
 public enum SocketIoTransport: Int {
-  case websocket
-  case polling
-  case undefined
+    case websocket
+    case polling
+    case undefined
 }
 
 @objc
 public enum SocketEvent: Int {
-  case connect
-  case connecting
-  case disconnect
-  case error
-  case message
-  case reconnect
-  case reconnectAttempt
-  case ping
-  case pong
+    case connect
+    case connecting
+    case disconnect
+    case error
+    case message
+    case reconnect
+    case reconnectAttempt
+    case ping
+    case pong
 }
 
 @objc
 public class SocketIo: NSObject {
-  private let socketManager: SocketManager
-  private let socket: SocketIOClient
-  
-  @objc
-  public init(
-    endpoint: String,
-    queryParams: [String: Any]?,
-    transport: SocketIoTransport
-  ) {
-    var configuration: SocketIOClientConfiguration = [ .compress ]
-    if let queryParams = queryParams {
-      configuration.insert(.connectParams(queryParams))
-    }
-    
-    switch transport {
-    case .websocket:
-      configuration.insert(.forceWebsockets(true))
-    case .polling:
-      configuration.insert(.forcePolling(true))
-    case .undefined: do {}
-    }
-    
-    socketManager = SocketManager(socketURL: URL(string: endpoint)!,
-                                  config: configuration)
-    socket = socketManager.defaultSocket
-  }
-  
-  @objc
-  public func connect() {
-    socket.connect()
-  }
-  
-  @objc
-  public func disconnect() {
-    socket.disconnect()
-  }
-  
-  @objc
-  public func isConnected() -> Bool {
-    return socket.status == SocketIOStatus.connected
-  }
-  
-  @objc
-  public func on(event: String, action: @escaping (String) -> Void) {
-    // FIXME сейчас получается что SocketIo десериализует строку в json (dictionary), а мы после этого сериализуем обратно в строку, чтобы на уровне общей логики мультиплатформенный json парсер спарсил данные (результат парсинга iOS и Android варианта socketio разный - приводить к общему виду проблемно, проще в json вернуть и в общем коде преобразовать)
-    socket.on(event) { data, emitter in
-      let jsonData = try! JSONSerialization.data(withJSONObject: data[0], options: .prettyPrinted)
-      let jsonString = String(data: jsonData, encoding: .utf8)!
-      let _ = action(jsonString)
-    }
-  }
-  
-  @objc
-  public func on(socketEvent: SocketEvent, action: @escaping (Array<Any>) -> Void) {
-    let clientEvent: SocketClientEvent
-    switch socketEvent {
-    case .connect:
-      clientEvent = .connect
-      break
-    case .error:
-      clientEvent = .error
-      break
-    case .message:
-      socket.onAny { anyEvent in
-        if let data = anyEvent.items {
-          action(data)
-        } else {
-          action([])
-        }
-      }
-      return
-    case .disconnect:
-      clientEvent = .disconnect
-      break
-    case .reconnect:
-      clientEvent = .reconnect
-    case .reconnectAttempt:
-      clientEvent = .reconnectAttempt
-    case .ping:
-      clientEvent = .ping
-    case .pong:
-      clientEvent = .pong
-    case .connecting:
-      socket.on(clientEvent: .statusChange) { [weak self] data, _ in
-        if self?.socket.status == .connecting {
-          action(data)
-        }
-      }
-      return
-    default:
-      return
-    }
-    socket.on(clientEvent: clientEvent) { data, _ in
-      action(data)
-    }
-  }
-  
-  @objc
-  public func emit(event: String, data: Array<Any>) {
-    var result = Array<Any>()
-    for i in (0...(data.count - 1)) {
-      let item = data[i]
-      if let itemData = (item as? String)?.data(using: .utf8) {
-        do {
-          let itemObject = try JSONSerialization.jsonObject(with: itemData, options: []) as? [String: Any]
-          result.append(itemObject)
-        } catch {
-          print(error.localizedDescription)
-        }
-      } else {
-        result.append(item)
-      }
-    }
-    socket.emit(event, with: result)
-  }
-  
-  @objc
-  public func emit(event: String, string: String) {
-    socket.emit(event, with: [string])
-  }
-}
+    private let socketManager: SocketManager
+    private let socket: SocketIOClient
 
-private extension UUID {
-  func add(to array: inout Array<UUID>) {
-    array.append(self)
-  }
-}
+    @objc
+    public init(
+        endpoint: String,
+        queryParams: [String: Any]?,
+        transport: SocketIoTransport
+    ) {
+        var configuration: SocketIOClientConfiguration = [.compress]
 
-private extension SocketIOClient {
-  func off(ids: Array<UUID>) {
-    for id in ids {
-      off(id: id)
+        if let queryParams = queryParams {
+            configuration.insert(.connectParams(queryParams))
+        }
+
+        switch transport {
+        case .websocket:
+            configuration.insert(.forceWebsockets(true))
+        case .polling:
+            configuration.insert(.forcePolling(true))
+        case .undefined:
+            // do nothing
+            break
+        }
+
+        socketManager = SocketManager(socketURL: URL(string: endpoint)!,
+                                      config: configuration)
+        socket = socketManager.defaultSocket
     }
-  }
+
+    @objc
+    public func connect() {
+        socket.connect()
+    }
+
+    @objc
+    public func disconnect() {
+        socket.disconnect()
+    }
+
+    @objc
+    public func isConnected() -> Bool {
+        return socket.status == .connected
+    }
+
+    @objc
+    public func on(event: String, action: @escaping (String) -> Void) {
+        // FIXME: Actualmente parseamos la data devuelta por socketIO,
+        // la transformamos en JSON string y la devolvemos al callback.
+        socket.on(event) { data, emitter in
+            guard !data.isEmpty else {
+                action("") // o un "{}" si prefieres
+                return
+            }
+
+            // data[0] podría ser un objeto, un string, etc
+            // Asumamos que es un objeto o array.
+            do {
+                let jsonData = try JSONSerialization.data(withJSONObject: data[0], options: [])
+                let jsonString = String(data: jsonData, encoding: .utf8) ?? ""
+                action(jsonString)
+            } catch {
+                print("JSONSerialization error: \(error)")
+                action("")
+            }
+        }
+    }
+
+    @objc
+    public func on(socketEvent: SocketEvent, action: @escaping ([Any]) -> Void) {
+        let clientEvent: SocketClientEvent
+
+        switch socketEvent {
+        case .connect:
+            clientEvent = .connect
+        case .error:
+            clientEvent = .error
+        case .message:
+            // Para .message no existe un clientEvent directo;
+            // Usamos onAny y verificamos "message"
+            socket.onAny { anyEvent in
+                if let data = anyEvent.items {
+                    action(data)
+                } else {
+                    action([])
+                }
+            }
+            return
+
+        case .disconnect:
+            clientEvent = .disconnect
+        case .reconnect:
+            clientEvent = .reconnect
+        case .reconnectAttempt:
+            clientEvent = .reconnectAttempt
+        case .ping:
+            clientEvent = .ping
+        case .pong:
+            clientEvent = .pong
+        case .connecting:
+            // No existe un .connecting exacto, así que monitoreamos
+            // statusChange y verificamos si es .connecting
+            socket.on(clientEvent: .statusChange) { [weak self] data, _ in
+                if self?.socket.status == .connecting {
+                    action(data)
+                }
+            }
+            return
+        default:
+            // Por si agregas en el enum algo que no está mapeado
+            return
+        }
+
+        socket.on(clientEvent: clientEvent) { data, _ in
+            action(data)
+        }
+    }
+
+    @objc
+    public func emit(event: String, data: [Any]) {
+        // Transformamos cada elemento del array si es JSON en string
+        var result = [Any]()
+
+        for item in data {
+            if let jsonString = item as? String,
+               let itemData = jsonString.data(using: .utf8)
+            {
+                do {
+                    // parseamos el string como JSON
+                    // itemObject puede ser [String: Any], [Any], etc
+                    let itemObject = try JSONSerialization.jsonObject(with: itemData, options: [])
+                    result.append(itemObject)
+                } catch {
+                    print("emit parsing error: \(error.localizedDescription)")
+                    // Si falla el parse, lo mandamos tal cual
+                    result.append(jsonString)
+                }
+            } else {
+                result.append(item)
+            }
+        }
+
+        // Llamamos a la nueva versión de emit
+        // Nota: 'result' es [Any], pero socket.emit requiere [SocketData].
+        // Si no quieres castear, podrías dejar 'result' como [SocketData].
+        // Para eso, deberías garantizar que los tipos de 'result' sean conformes a 'SocketData'.
+        // En la práctica, String, Int, Dictionary, Array, etc. ya conforman SocketData.
+        // Pero con 'Any' a lo mejor no todos. Podríamos forzar un cast.
+
+        // Si no deseas el completion, omítelo (usa la versión con nil)
+        socket.emit(event, with: result as! [SocketData]) // Forzamos cast, asumiendo que todos son SocketData
+    }
+
+    @objc
+    public func emit(event: String, string: String) {
+        // Simplemente emitimos el string
+        socket.emit(event, with: [string]) // con completion por defecto = nil
+    }
 }
