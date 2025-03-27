@@ -1,3 +1,7 @@
+/*
+ * Copyright 2020 IceRock MAG Inc. Use of this source code is governed by the Apache 2.0 license.
+ */
+
 import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget
 import java.util.Base64
 
@@ -7,18 +11,15 @@ plugins {
     id("kotlin-parcelize")
     id("dev.icerock.mobile.multiplatform.cocoapods")
     id("dev.icerock.mobile.multiplatform.android-manifest")
-    // Se omiten los plugins de Maven Publish y Signing al no publicar en Maven Central
-    // id("org.gradle.maven-publish")
-    // id("signing")
+    id("org.gradle.maven-publish")
+    id("signing")
 }
 
-group = "io.github.wilmermolinac" // Tu grupo (formato: io.github.tuUsuario)
-version = "0.6.1" // Versión de la librería
+group = "dev.icerock.moko"
+version = libs.versions.mokoSocketIoVersion.get()
 
 kotlin {
     jvmToolchain(11)
-
-    // Registrar el target Android
     androidTarget {
         publishLibraryVariants("release", "debug")
     }
@@ -29,17 +30,19 @@ kotlin {
     sourceSets {
         val commonMain by getting
 
-        val commonJvm by creating {
+        val commonJvm = create("commonJvm") {
             dependsOn(commonMain)
         }
+
         val androidMain by getting {
             dependsOn(commonJvm)
         }
+
         val jvmMain by getting {
             dependsOn(commonJvm)
         }
+
         val iosMain by getting
-        // Para iOS Simulator Arm64, se hace que dependa de iosMain
         val iosSimulatorArm64Main by getting {
             dependsOn(iosMain)
         }
@@ -55,30 +58,82 @@ kotlin {
 }
 
 dependencies {
-    // Dependencia para la serialización en commonMain
-    commonMain.api("org.jetbrains.kotlinx:kotlinx-serialization-json:1.5.1")
-    // Ejemplo de dependencia para Android. Asegúrate de tener definida la coordenada en tu version catalog (libs.appCompat) o reemplázala directamente.
+    commonMainApi(libs.serialization)
     "androidMainImplementation"(libs.appCompat)
-    // Dependencia para JVM (excluyendo org.json)
     "commonJvmImplementation"(libs.socketIo) {
         exclude(group = "org.json", module = "json")
     }
     "jvmMainImplementation"(libs.socketIo)
 }
-
 android {
-    namespace = "io.github.wilmermolinac.moko.socket"
-    // Aquí puedes incluir otras configuraciones de Android según tus necesidades
+    namespace = "dev.icerock.moko.socket"
 }
 
 val javadocJar by tasks.registering(Jar::class) {
     archiveClassifier.set("javadoc")
 }
 
-// Bloque de publicación Maven y signing se omiten al no publicarla en Maven Central.
-// Puedes consumir esta librería directamente desde GitHub (por ejemplo, usando JitPack o como composite build).
+publishing {
+    repositories.maven("https://s01.oss.sonatype.org/service/local/staging/deploy/maven2/") {
+        name = "OSSRH"
+
+        credentials {
+            username = System.getenv("OSSRH_USER")
+            password = System.getenv("OSSRH_KEY")
+        }
+    }
+
+    publications.withType<MavenPublication> {
+        // Stub javadoc.jar artifact
+        artifact(javadocJar.get())
+
+        // Provide artifacts information requited by Maven Central
+        pom {
+            name.set("MOKO socket io")
+            description.set("Socket.IO implementation Kotlin Multiplatform library")
+            url.set("https://github.com/icerockdev/moko-socket-io")
+            licenses {
+                license {
+                    name.set("Apache-2.0")
+                    url.set("https://github.com/icerockdev/moko-socket-io/blob/master/LICENSE.md")
+                    distribution.set("repo")
+                }
+            }
+
+            developers {
+                developer {
+                    id.set("Alex009")
+                    name.set("Aleksey Mikhailov")
+                    email.set("aleksey.mikhailov@icerockdev.com")
+                }
+                developer {
+                    id.set("Dorofeev")
+                    name.set("Andrey Dorofeev")
+                    email.set("adorofeev@icerockdev.com")
+                }
+            }
+
+            scm {
+                connection.set("scm:git:ssh://github.com/icerockdev/moko-socket-io.git")
+                developerConnection.set("scm:git:ssh://github.com/icerockdev/moko-socket-io.git")
+                url.set("https://github.com/icerockdev/moko-socket-io")
+            }
+        }
+    }
+
+    signing {
+        val signingKeyId: String? = System.getenv("SIGNING_KEY_ID")
+        val signingPassword: String? = System.getenv("SIGNING_PASSWORD")
+        val signingKey: String? = System.getenv("SIGNING_KEY")?.let { base64Key ->
+            String(Base64.getDecoder().decode(base64Key))
+        }
+        if (signingKeyId != null) {
+            useInMemoryPgpKeys(signingKeyId, signingKey, signingPassword)
+            sign(publishing.publications)
+        }
+    }
+}
 
 cocoaPods {
-    // Esto generará el podspec para iOS a partir de la configuración multiplataforma
     pod("mokoSocketIo")
 }
