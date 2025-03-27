@@ -1,11 +1,11 @@
 plugins {
-    id 'com.android.library'
-    id 'org.jetbrains.kotlin.multiplatform'
-    id 'kotlin-parcelize'
-    id 'dev.icerock.mobile.multiplatform.cocoapods'
-    id 'dev.icerock.mobile.multiplatform.android-manifest'
-    id 'maven-publish'
-    id 'signing'
+    id("com.android.library")
+    id("org.jetbrains.kotlin.multiplatform")
+    id("kotlin-parcelize")
+    id("dev.icerock.mobile.multiplatform.cocoapods")
+    id("dev.icerock.mobile.multiplatform.android-manifest")
+    id("maven-publish")
+    id("signing")
 }
 
 group = "io.github.wilmermolinac"      // Aquí defines el grupo con el formato "io.github.tuUsuario"
