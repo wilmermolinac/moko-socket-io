@@ -1,19 +1,21 @@
+import org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget
+import java.util.Base64
+
 plugins {
     id("com.android.library")
     id("org.jetbrains.kotlin.multiplatform")
     id("kotlin-parcelize")
     id("dev.icerock.mobile.multiplatform.cocoapods")
     id("dev.icerock.mobile.multiplatform.android-manifest")
-    id("maven-publish")
+    id("org.gradle.maven-publish")
     id("signing")
 }
 
-group = "io.github.wilmermolinac" // Grupo con el formato "io.github.wilmermolinac"
-version = "0.6.1" // Versión que deseas publicar
+group = "io.github.wilmermolinac" // Tu grupo en GitHub
+version = libs.versions.mokoSocketIoVersion.get() // O reemplázalo por "0.6.1" si lo prefieres
 
 kotlin {
     jvmToolchain(11)
-
     androidTarget {
         publishLibraryVariants("release", "debug")
     }
@@ -22,19 +24,29 @@ kotlin {
     jvm()
 
     sourceSets {
-        // Usamos "by getting" para obtener los source sets existentes
         val commonMain by getting
-        val androidMain by getting
-        val jvmMain by getting
+
+        val commonJvm = create("commonJvm") {
+            dependsOn(commonMain)
+        }
+
+        val androidMain by getting {
+            dependsOn(commonJvm)
+        }
+
+        val jvmMain by getting {
+            dependsOn(commonJvm)
+        }
+
         val iosMain by getting
         val iosSimulatorArm64Main by getting {
             dependsOn(iosMain)
         }
     }
 
-    targets.withType<org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget>().configureEach {
-        compilations.all {
-            cinterops.all {
+    targets.withType<KotlinNativeTarget>().configureEach {
+        compilations.configureEach {
+            cinterops.configureEach {
                 extraOpts("-compiler-option", "-fmodules")
             }
         }
@@ -42,54 +54,64 @@ kotlin {
 }
 
 dependencies {
-    // En Kotlin DSL usamos paréntesis para declarar dependencias
+    // Dependencia para la serialización
     commonMain.api("org.jetbrains.kotlinx:kotlinx-serialization-json:1.5.1")
-    // Otras dependencias que requieras...
+    // Ejemplo de dependencia para Android; asegúrate de tener definida la coordenada en tu version catalog o reemplázala directamente
+    "androidMainImplementation"(libs.appCompat)
+    // Dependencia para JVM (excluyendo org.json)
+    "commonJvmImplementation"(libs.socketIo) {
+        exclude(group = "org.json", module = "json")
+    }
+    "jvmMainImplementation"(libs.socketIo)
 }
 
 android {
-    namespace = "dev.icerock.moko.socket"
-    // Configuración de Android...
+    namespace = "io.github.wilmermolinac.moko.socket" // Tu namespace para Android
+    // Otras configuraciones de Android...
 }
 
 val javadocJar by tasks.registering(Jar::class) {
     archiveClassifier.set("javadoc")
 }
 
-// Publicación Maven
 publishing {
-    publications {
-        create<MavenPublication>("maven") {
-            from(components["kotlin"])
-            artifactId = "moko-socket-io"
-            artifact(javadocJar.get())
+    repositories.maven("https://s01.oss.sonatype.org/service/local/staging/deploy/maven2/") {
+        name = "OSSRH"
+        credentials {
+            username = System.getenv("OSSRH_USER")
+            password = System.getenv("OSSRH_KEY")
+        }
+    }
 
-            pom {
-                name.set("MOKO Socket IO")
-                description.set("Socket.IO implementation for Kotlin Multiplatform")
+    publications.withType<org.gradle.api.publish.maven.MavenPublication> {
+        artifact(javadocJar.get())
+
+        pom {
+            name.set("Moko Socket IO")
+            description.set("Socket.IO implementation for Kotlin Multiplatform library")
+            url.set("https://github.com/wilmermolinac/moko-socket-io")
+            licenses {
+                license {
+                    name.set("Apache-2.0")
+                    url.set("https://github.com/wilmermolinac/moko-socket-io/blob/master/LICENSE.md")
+                    distribution.set("repo")
+                }
+            }
+            developers {
+                developer {
+                    id.set("wilmermolinac")
+                    name.set("Wilmer Molina")
+                    email.set("wamcstudios@gmail.com")
+                }
+            }
+            scm {
+                connection.set("scm:git:https://github.com/wilmermolinac/moko-socket-io.git")
+                developerConnection.set("scm:git:https://github.com/wilmermolinac/moko-socket-io.git")
                 url.set("https://github.com/wilmermolinac/moko-socket-io")
-                licenses {
-                    license {
-                        name.set("Apache-2.0")
-                        url.set("https://github.com/wilmermolinac/moko-socket-io/blob/master/LICENSE.md")
-                        distribution.set("repo")
-                    }
-                }
-                developers {
-                    developer {
-                        id.set("wilmermolinac")
-                        name.set("Wilmer Molina")
-                        email.set("wamcstudios@gmail.com")
-                    }
-                }
-                scm {
-                    connection.set("scm:git:https://github.com/wilmermolinac/moko-socket-io.git")
-                    developerConnection.set("scm:git:https://github.com/wilmermolinac/moko-socket-io.git")
-                    url.set("https://github.com/wilmermolinac/moko-socket-io")
-                }
             }
         }
     }
+
     repositories.maven {
         name = "GitHubPackages"
         url = uri("https://maven.pkg.github.com/wilmermolinac/moko-socket-io")
@@ -100,7 +122,6 @@ publishing {
     }
 }
 
-// Configuración de Signing (opcional, si publicas en repositorios que requieren firma)
 signing {
     val signingKeyId: String? = System.getenv("SIGNING_KEY_ID")
     val signingPassword: String? = System.getenv("SIGNING_PASSWORD")
@@ -113,7 +134,7 @@ signing {
     }
 }
 
-// Configuración de CocoaPods para generar el podspec a partir de tu configuración KMM
 cocoaPods {
+    // Esto generará el podspec a partir de la configuración multiplataforma
     pod("mokoSocketIo")
 }
