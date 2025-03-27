@@ -8,8 +8,8 @@ plugins {
     id("signing")
 }
 
-group = "io.github.wilmermolinac"      // Aquí defines el grupo con el formato "io.github.tuUsuario"
-version = "0.6.1"                     // Establece la versión que deseas publicar
+group = "io.github.wilmermolinac" // Grupo con el formato "io.github.wilmermolinac"
+version = "0.6.1" // Versión que deseas publicar
 
 kotlin {
     jvmToolchain(11)
@@ -22,16 +22,17 @@ kotlin {
     jvm()
 
     sourceSets {
-        def commonMain = getByName("commonMain")
-        def androidMain = getByName("androidMain")
-        def jvmMain = getByName("jvmMain")
-        def iosMain = getByName("iosMain")
-        def iosSimulatorArm64Main = getByName("iosSimulatorArm64Main") {
+        // Usamos "by getting" para obtener los source sets existentes
+        val commonMain by getting
+        val androidMain by getting
+        val jvmMain by getting
+        val iosMain by getting
+        val iosSimulatorArm64Main by getting {
             dependsOn(iosMain)
         }
     }
 
-    targets.withType(org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget).configureEach {
+    targets.withType<org.jetbrains.kotlin.gradle.plugin.mpp.KotlinNativeTarget>().configureEach {
         compilations.all {
             cinterops.all {
                 extraOpts("-compiler-option", "-fmodules")
@@ -41,9 +42,9 @@ kotlin {
 }
 
 dependencies {
-    // Dependencias comunes y específicas según tu proyecto
-    commonMainApi "org.jetbrains.kotlinx:kotlinx-serialization-json:1.5.1" // Ejemplo
-    // Otras dependencias...
+    // En Kotlin DSL usamos paréntesis para declarar dependencias
+    commonMain.api("org.jetbrains.kotlinx:kotlinx-serialization-json:1.5.1")
+    // Otras dependencias que requieras...
 }
 
 android {
@@ -51,12 +52,18 @@ android {
     // Configuración de Android...
 }
 
+val javadocJar by tasks.registering(Jar::class) {
+    archiveClassifier.set("javadoc")
+}
+
 // Publicación Maven
 publishing {
     publications {
-        create(MavenPublication, "maven") {
+        create<MavenPublication>("maven") {
             from(components["kotlin"])
             artifactId = "moko-socket-io"
+            artifact(javadocJar.get())
+
             pom {
                 name.set("MOKO Socket IO")
                 description.set("Socket.IO implementation for Kotlin Multiplatform")
@@ -72,7 +79,7 @@ publishing {
                     developer {
                         id.set("wilmermolinac")
                         name.set("Wilmer Molina")
-                        email.set("wamcstudios@gmail.com") // Reemplaza con tu correo
+                        email.set("wamcstudios@gmail.com")
                     }
                 }
                 scm {
@@ -83,34 +90,30 @@ publishing {
             }
         }
     }
-    repositories {
-        // Ejemplo: Publicar en GitHub Packages. Asegúrate de tener configuradas las credenciales.
-        maven {
-            name = "GitHubPackages"
-            url = uri("https://maven.pkg.github.com/wilmermolinac/moko-socket-io")
-            credentials {
-                username = project.findProperty("gpr.user") ?: System.getenv("GITHUB_USERNAME")
-                password = project.findProperty("gpr.key") ?: System.getenv("GITHUB_TOKEN")
-            }
+    repositories.maven {
+        name = "GitHubPackages"
+        url = uri("https://maven.pkg.github.com/wilmermolinac/moko-socket-io")
+        credentials {
+            username = (project.findProperty("gpr.user") as? String) ?: System.getenv("GITHUB_USERNAME")
+            password = (project.findProperty("gpr.key") as? String) ?: System.getenv("GITHUB_TOKEN")
         }
-        // Si deseas publicar en OSSRH (Maven Central), configúralo aquí.
     }
 }
 
-// Configuración de Signing (opcional si publicas en repositorios que requieren firma)
+// Configuración de Signing (opcional, si publicas en repositorios que requieren firma)
 signing {
-    // Si tus variables de entorno están definidas, se usarán para firmar la publicación
-    def signingKeyId = System.getenv("SIGNING_KEY_ID")
-    def signingPassword = System.getenv("SIGNING_PASSWORD")
-    def signingKey = System.getenv("SIGNING_KEY")?.with { key -> new String(Base64.getDecoder().decode(key)) }
+    val signingKeyId: String? = System.getenv("SIGNING_KEY_ID")
+    val signingPassword: String? = System.getenv("SIGNING_PASSWORD")
+    val signingKey: String? = System.getenv("SIGNING_KEY")?.let { key ->
+        String(Base64.getDecoder().decode(key))
+    }
     if (signingKeyId != null && signingKey != null && signingPassword != null) {
         useInMemoryPgpKeys(signingKeyId, signingKey, signingPassword)
         sign(publishing.publications)
     }
 }
 
-// Configuración de CocoaPods (para iOS)
+// Configuración de CocoaPods para generar el podspec a partir de tu configuración KMM
 cocoaPods {
-    // Esto generará el podspec a partir de tu configuración KMM
     pod("mokoSocketIo")
 }
