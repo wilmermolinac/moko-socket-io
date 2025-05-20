@@ -125,26 +125,28 @@ public class SocketIo: NSObject {
   
   @objc
   public func emit(event: String, data: Array<Any>) {
-    var result = Array<Any>()
-    for i in (0...(data.count - 1)) {
-      let item = data[i]
-      if let itemData = (item as? String)?.data(using: .utf8) {
+    // Convertir resultado a [SocketData]
+    let result = data.map { item -> SocketData in
+      if let stringItem = item as? String,
+         let itemData = stringItem.data(using: .utf8) {
         do {
-          let itemObject = try JSONSerialization.jsonObject(with: itemData, options: []) as? [String: Any]
-          result.append(itemObject as Any) // Añadido "as Any" para evitar warning
+          if let jsonObject = try JSONSerialization.jsonObject(with: itemData, options: []) as? [String: Any] {
+            return jsonObject as SocketData
+          }
         } catch {
           print(error.localizedDescription)
         }
-      } else {
-        result.append(item)
       }
+      // Si no se puede convertir, intentar usar el item original como SocketData
+      return item as? SocketData ?? "null"
     }
-    socket.emit(event, with: result, completion: nil) // Añadido ", completion: nil"
+
+    socket.emit(event, with: result, completion: nil)
   }
 
   @objc
   public func emit(event: String, string: String) {
-    socket.emit(event, with: [string], completion: nil) // Añadido ", completion: nil"
+    socket.emit(event, with: [string as SocketData], completion: nil)
   }
 }
 
