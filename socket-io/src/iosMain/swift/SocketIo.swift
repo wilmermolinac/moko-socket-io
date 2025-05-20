@@ -131,7 +131,7 @@ public class SocketIo: NSObject {
       if let itemData = (item as? String)?.data(using: .utf8) {
         do {
           let itemObject = try JSONSerialization.jsonObject(with: itemData, options: []) as? [String: Any]
-          result.append(itemObject)
+          result.append(itemObject as Any) // Añadido "as Any" para evitar warning
         } catch {
           print(error.localizedDescription)
         }
@@ -139,12 +139,12 @@ public class SocketIo: NSObject {
         result.append(item)
       }
     }
-    socket.emit(event, with: result)
+    socket.emit(event, with: result, completion: nil) // Añadido ", completion: nil"
   }
-  
+
   @objc
   public func emit(event: String, string: String) {
-    socket.emit(event, with: [string])
+    socket.emit(event, with: [string], completion: nil) // Añadido ", completion: nil"
   }
 }
 
