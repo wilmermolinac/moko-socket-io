@@ -125,27 +125,60 @@ public class SocketIo: NSObject {
   
   @objc
   public func emit(event: String, data: Array<Any>) {
-    // Convertir resultado a [SocketData]
-    let result = data.map { item -> SocketData in
+    // En Socket.IO-Client-Swift 16.1.1, el método emit espera un array de tipo [any SocketData]
+    // Necesitamos convertir cada elemento del array a un tipo compatible con SocketData
+
+    var socketDataArray = [any SocketData]() // Creamos un array vacío del tipo correcto
+
+    for item in data {
       if let stringItem = item as? String,
          let itemData = stringItem.data(using: .utf8) {
         do {
           if let jsonObject = try JSONSerialization.jsonObject(with: itemData, options: []) as? [String: Any] {
-            return jsonObject as SocketData
+            // [String: Any] es compatible con SocketData
+            socketDataArray.append(jsonObject)
+          } else {
+            // Si no es un objeto JSON válido, usamos la string original
+            socketDataArray.append(stringItem)
           }
         } catch {
           print(error.localizedDescription)
+          // Si hay un error en el parsing, usamos la string original
+          socketDataArray.append(stringItem)
         }
+      } else if let intItem = item as? Int {
+        socketDataArray.append(intItem) // Int es compatible con SocketData
+      } else if let doubleItem = item as? Double {
+        socketDataArray.append(doubleItem) // Double es compatible con SocketData
+      } else if let boolItem = item as? Bool {
+        socketDataArray.append(boolItem) // Bool es compatible con SocketData
+      } else if let dictItem = item as? [String: Any] {
+        socketDataArray.append(dictItem) // [String: Any] es compatible con SocketData
+      } else if let arrayItem = item as? [Any] {
+        // Podemos tratar de convertir el array a un tipo compatible si es necesario
+        // Por ahora, lo convertimos a string para mantener la simplicidad
+        do {
+          let jsonData = try JSONSerialization.data(withJSONObject: arrayItem, options: [])
+          if let jsonString = String(data: jsonData, encoding: .utf8) {
+            socketDataArray.append(jsonString)
+          }
+        } catch {
+          print(error.localizedDescription)
+          // Si hay un error, usamos "null" como valor por defecto
+          socketDataArray.append("null")
+        }
+      } else {
+        // Para cualquier otro tipo que no podamos manejar, usamos "null"
+        socketDataArray.append("null")
       }
-      // Si no se puede convertir, intentar usar el item original como SocketData
-      return item as? SocketData ?? "null"
     }
 
-    socket.emit(event, with: result, completion: nil)
+    socket.emit(event, with: socketDataArray, completion: nil)
   }
 
   @objc
   public func emit(event: String, string: String) {
+    // String es compatible con SocketData, así que podemos usarlo directamente
     socket.emit(event, with: [string as SocketData], completion: nil)
   }
 }
