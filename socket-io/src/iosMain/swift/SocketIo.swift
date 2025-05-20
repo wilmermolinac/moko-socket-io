@@ -33,38 +33,23 @@ public class SocketIo: NSObject {
   public init(
     endpoint: String,
     queryParams: [String: Any]?,
-    transport: SocketIoTransport,
-    log: Bool = false,
-    reconnects: Bool = true,
-    reconnectAttempts: Int = -1,
-    reconnectWait: Int = 10
+    transport: SocketIoTransport
   ) {
-    var configuration: SocketIOClientConfiguration = [.compress]
-
+    var configuration: SocketIOClientConfiguration = [ .compress ]
     if let queryParams = queryParams {
       configuration.insert(.connectParams(queryParams))
     }
 
-    // Set logging
-    if log {
-      configuration.insert(.log(true))
-    }
-
-    // Set reconnection parameters
-    configuration.insert(.reconnects(reconnects))
-    configuration.insert(.reconnectAttempts(reconnectAttempts))
-    configuration.insert(.reconnectWait(Double(reconnectWait)))
-
-    // Set transport type
     switch transport {
     case .websocket:
       configuration.insert(.forceWebsockets(true))
     case .polling:
       configuration.insert(.forcePolling(true))
-    case .undefined: break
+    case .undefined: do {}
     }
 
-    socketManager = SocketManager(socketURL: URL(string: endpoint)!, config: configuration)
+    socketManager = SocketManager(socketURL: URL(string: endpoint)!,
+                                  config: configuration)
     socket = socketManager.defaultSocket
   }
 
@@ -80,57 +65,29 @@ public class SocketIo: NSObject {
 
   @objc
   public func isConnected() -> Bool {
-    return socket.status == .connected
-  }
-
-  @objc
-  public func status() -> String {
-    switch socket.status {
-    case .connected:
-      return "connected"
-    case .connecting:
-      return "connecting"
-    case .disconnected:
-      return "disconnected"
-    case .notConnected:
-      return "notConnected"
-    }
+    return socket.status == SocketIOStatus.connected
   }
 
   @objc
   public func on(event: String, action: @escaping (String) -> Void) {
+    // FIXME сейчас получается что SocketIo десериализует строку в json (dictionary), а мы после этого сериализуем обратно в строку, чтобы на уровне общей логики мультиплатформенный json парсер спарсил данные (результат парсинга iOS и Android варианта socketio разный - приводить к общему виду проблемно, проще в json вернуть и в общем коде преобразовать)
     socket.on(event) { data, emitter in
-      if let firstData = data.first {
-        do {
-          let jsonData = try JSONSerialization.data(withJSONObject: firstData, options: .prettyPrinted)
-          let jsonString = String(data: jsonData, encoding: .utf8) ?? "{}"
-          action(jsonString)
-        } catch {
-          print("Error serializing data: \(error.localizedDescription)")
-          action("{}")
-        }
-      } else {
-        action("{}")
-      }
-    }
-  }
-
-  @objc
-  public func on(event: String, callback: @escaping ([Any], @escaping ([Any]) -> Void) -> Void) {
-    socket.on(event) { data, ack in
-      callback(data, ack.with)
+      let jsonData = try! JSONSerialization.data(withJSONObject: data[0], options: .prettyPrinted)
+      let jsonString = String(data: jsonData, encoding: .utf8)!
+      let _ = action(jsonString)
     }
   }
 
   @objc
   public func on(socketEvent: SocketEvent, action: @escaping (Array<Any>) -> Void) {
     let clientEvent: SocketClientEvent
-
     switch socketEvent {
     case .connect:
       clientEvent = .connect
+      break
     case .error:
       clientEvent = .error
+      break
     case .message:
       socket.onAny { anyEvent in
         if let data = anyEvent.items {
@@ -142,6 +99,7 @@ public class SocketIo: NSObject {
       return
     case .disconnect:
       clientEvent = .disconnect
+      break
     case .reconnect:
       clientEvent = .reconnect
     case .reconnectAttempt:
@@ -157,8 +115,9 @@ public class SocketIo: NSObject {
         }
       }
       return
+    default:
+      return
     }
-
     socket.on(clientEvent: clientEvent) { data, _ in
       action(data)
     }
@@ -166,90 +125,39 @@ public class SocketIo: NSObject {
 
   @objc
   public func emit(event: String, data: Array<Any>) {
-    var transformedData = [Any]()
-
-    for item in data {
-      if let stringItem = item as? String, let itemData = stringItem.data(using: .utf8) {
+    var result = Array<Any>()
+    for i in (0...(data.count - 1)) {
+      let item = data[i]
+      if let itemData = (item as? String)?.data(using: .utf8) {
         do {
-          if let itemObject = try JSONSerialization.jsonObject(with: itemData, options: []) as? [String: Any] {
-            transformedData.append(itemObject)
-          } else {
-            transformedData.append(item)
-          }
+          let itemObject = try JSONSerialization.jsonObject(with: itemData, options: []) as? [String: Any]
+          result.append(itemObject)
         } catch {
-          print("Error parsing JSON string: \(error.localizedDescription)")
-          transformedData.append(item)
+          print(error.localizedDescription)
         }
       } else {
-        transformedData.append(item)
+        result.append(item)
       }
     }
-
-    socket.emit(event, with: transformedData)
+    socket.emit(event, with: result)
   }
 
   @objc
   public func emit(event: String, string: String) {
     socket.emit(event, with: [string])
   }
+}
 
-  @objc
-  public func emitWithAck(event: String, data: Any, timeout: TimeInterval = 0, callback: @escaping (Array<Any>) -> Void) {
-    let transformedData: Any
-
-    if let stringData = data as? String, let itemData = stringData.data(using: .utf8) {
-      do {
-        if let itemObject = try JSONSerialization.jsonObject(with: itemData, options: []) as? [String: Any] {
-          transformedData = itemObject
-        } else {
-          transformedData = data
-        }
-      } catch {
-        print("Error parsing JSON string: \(error.localizedDescription)")
-        transformedData = data
-      }
-    } else {
-      transformedData = data
-    }
-
-    socket.emitWithAck(event, transformedData).timingOut(after: timeout) { ackData in
-      callback(ackData)
-    }
+private extension UUID {
+  func add(to array: inout Array<UUID>) {
+    array.append(self)
   }
+}
 
-  @objc
-  public func emitWithAck(event: String, data: Array<Any>, timeout: TimeInterval = 0, callback: @escaping (Array<Any>) -> Void) {
-    var transformedData = [Any]()
-
-    for item in data {
-      if let stringItem = item as? String, let itemData = stringItem.data(using: .utf8) {
-        do {
-          if let itemObject = try JSONSerialization.jsonObject(with: itemData, options: []) as? [String: Any] {
-            transformedData.append(itemObject)
-          } else {
-            transformedData.append(item)
-          }
-        } catch {
-          print("Error parsing JSON string: \(error.localizedDescription)")
-          transformedData.append(item)
-        }
-      } else {
-        transformedData.append(item)
-      }
+private extension SocketIOClient {
+  func off(ids: Array<UUID>) {
+    for id in ids {
+      off(id: id)
     }
-
-    socket.emitWithAck(event, with: transformedData).timingOut(after: timeout) { ackData in
-      callback(ackData)
-    }
-  }
-
-  @objc
-  public func removeAllHandlers() {
-    socket.removeAllHandlers()
-  }
-
-  @objc
-  public func off(event: String) {
-    socket.off(event)
   }
 }
