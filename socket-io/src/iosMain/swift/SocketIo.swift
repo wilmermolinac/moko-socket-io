@@ -159,7 +159,8 @@ public class SocketIo: NSObject {
         }
 
         // Forzamos el cast a [SocketData] y agregamos 'completion: nil'
-        socket.emit(event, with: result as! [SocketData], completion: nil)
+        // Versión más segura
+        socket.emit(event, with: result.compactMap { $0 as? SocketData }, completion: nil)
     }
 
     @objc
